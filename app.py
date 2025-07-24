@@ -1,126 +1,83 @@
+
 import streamlit as st
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# ====================
-# Streamlit page config
-# ====================
-st.set_page_config(page_title="Spar Structural Analysis", layout="wide")
+st.set_page_config(layout="wide", page_title="UAV Spar Structural Dashboard", page_icon="✈️")
 
-# Apply dark mode
-st.markdown("""
-    <style>
-        body {
-            background-color: #0e1117;
-            color: #ffffff;
-        }
-        .stApp {
-            background-color: #0e1117;
-        }
-    </style>
-    """, unsafe_allow_html=True)
+st.title("✈️ UAV Structure Analysis Dashboard")
+st.markdown("Analyze **spar**, **ribs**, and **composite skin** contributions for UAV wings.")
 
-# ====================
-# Sidebar Input
-# ====================
-st.sidebar.header("Spar Parameters")
+with st.sidebar:
+    st.header("Geometry & Load")
+    span = st.number_input("Half-Span Length (m)", value=1.3)
+    total_force = st.number_input("Total Lift Force (N)", value=120.0)
+    chord = st.number_input("Chord Length (m)", value=0.3)
 
-# Global Parameters
-L = st.sidebar.number_input("Spar Length (m)", min_value=0.1, max_value=5.0, value=1.0, step=0.1)
-F = st.sidebar.number_input("Applied Load (N)", min_value=0.0, max_value=10000.0, value=100.0, step=10.0)
-E = st.sidebar.number_input("Young's Modulus (GPa)", min_value=1.0, max_value=500.0, value=70.0, step=1.0)
-sigma_yield = st.sidebar.number_input("Yield Strength (MPa)", min_value=10.0, max_value=2000.0, value=500.0, step=10.0)
-density = st.sidebar.number_input("Density (kg/m³)", min_value=500.0, max_value=3000.0, value=1600.0, step=10.0)
+    st.header("Spar 1 (Front)")
+    od1 = st.number_input("Front Spar OD (mm)", value=20.0)
+    id1 = st.number_input("Front Spar ID (mm)", value=18.0)
 
-# Spar 1
-st.sidebar.subheader("Spar 1")
-od1 = st.sidebar.number_input("OD Spar 1 (mm)", min_value=1.0, value=20.0)
-id1 = st.sidebar.number_input("ID Spar 1 (mm)", min_value=0.0, value=18.0)
+    st.header("Spar 2 (Rear)")
+    od2 = st.number_input("Rear Spar OD (mm)", value=10.0)
+    id2 = st.number_input("Rear Spar ID (mm)", value=8.0)
 
-# Spar 2
-st.sidebar.subheader("Spar 2")
-od2 = st.sidebar.number_input("OD Spar 2 (mm)", min_value=1.0, value=10.0)
-id2 = st.sidebar.number_input("ID Spar 2 (mm)", min_value=0.0, value=8.0)
+    st.header("Material")
+    youngs_modulus = st.number_input("Young's Modulus (GPa)", value=140.0)
+    density = st.number_input("Material Density (g/cm³)", value=1.6)
 
-# ====================
-# Function Definitions
-# ====================
-def calc_spar_properties(OD_mm, ID_mm, L, F, E, sigma_yield, density):
-    OD = OD_mm / 1000
-    ID = ID_mm / 1000
-    I = (np.pi / 64) * (OD**4 - ID**4)
-    c = OD / 2
-    stress = (F * L) / I * c  # Bending stress
-    deflection = (F * L**3) / (3 * (E * 1e9) * I)
-    volume = np.pi * (OD**2 - ID**2) / 4 * L
-    mass = volume * density
-    safety = sigma_yield * 1e6 / stress if stress > 0 else np.inf
-    return stress / 1e6, deflection * 1000, mass, safety  # MPa, mm, kg, ratio
+    st.header("Ribs")
+    rib_spacing = st.number_input("Rib Spacing (m)", value=0.15)
+    skin_thickness = st.number_input("Skin Thickness (mm)", value=0.5)
+    skin_E = st.number_input("Skin Modulus (GPa)", value=70.0)
 
-# ====================
-# Calculation
-# ====================
-s1 = calc_spar_properties(od1, id1, L, F, E, sigma_yield, density)
-s2 = calc_spar_properties(od2, id2, L, F, E, sigma_yield, density)
+# === Calculations ===
+def mm2_to_m4(mm4): return mm4 * 1e-12
 
-# ====================
-# Output
-# ====================
-st.title("🛠️ Spar Structural Analysis Dashboard")
-st.markdown("Compare two different spar tube configurations under the same loading.")
+def tube_inertia(od, id_):
+    return (np.pi / 64) * (od**4 - id_**4)
+
+I1 = tube_inertia(od1, id1)
+I2 = tube_inertia(od2, id2)
+I_total = I1 + I2
+
+L = span
+F = total_force / 2  # Half-wing load
+E = youngs_modulus * 1e9
+delta_max = (F * L**3) / (3 * E * mm2_to_m4(I_total))
+stress_max = (F * L * (od1 / 2)) / mm2_to_m4(I_total)
+shear_stress = F / (np.pi * ((od1 / 1000)**2 - (id1 / 1000)**2))
 
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader("🔵 Spar 1")
-    st.metric("Bending Stress", f"{s1[0]:.2f} MPa")
-    st.metric("Deflection", f"{s1[1]:.2f} mm")
-    st.metric("Mass", f"{s1[2]:.3f} kg")
-    st.metric("Safety Factor", f"{s1[3]:.2f}")
+    st.subheader("🧮 Structural Results")
+    st.metric("Max Bending Stress (Pa)", f"{stress_max:,.0f}")
+    st.metric("Tip Deflection (m)", f"{delta_max:.4f}")
+    st.metric("Shear Stress (Pa)", f"{shear_stress:,.0f}")
 
 with col2:
-    st.subheader("🟢 Spar 2")
-    st.metric("Bending Stress", f"{s2[0]:.2f} MPa")
-    st.metric("Deflection", f"{s2[1]:.2f} mm")
-    st.metric("Mass", f"{s2[2]:.3f} kg")
-    st.metric("Safety Factor", f"{s2[3]:.2f}")
+    st.subheader("📏 Combined Spar Inertia")
+    st.write(f"I Spar 1 = {I1:.2e} mm⁴")
+    st.write(f"I Spar 2 = {I2:.2e} mm⁴")
+    st.write(f"I Total  = {I_total:.2e} mm⁴")
 
-# ====================
-# Charts
-# ====================
-loads = np.linspace(0, F, 50)
-s1_stress = [(f * L) / ((np.pi / 64) * ((od1/1000)**4 - (id1/1000)**4)) * (od1/2000) / 1e6 for f in loads]
-s2_stress = [(f * L) / ((np.pi / 64) * ((od2/1000)**4 - (id2/1000)**4)) * (od2/2000) / 1e6 for f in loads]
+# === Visualization ===
+x = np.linspace(0, L, 200)
+M = F * (L - x)
+delta = (F * x**2) * (3*L - x) / (6 * E * mm2_to_m4(I_total))
 
-fig, ax = plt.subplots()
-ax.plot(loads, s1_stress, label="Spar 1", color='cyan')
-ax.plot(loads, s2_stress, label="Spar 2", color='lime')
-ax.set_xlabel("Load (N)")
-ax.set_ylabel("Bending Stress (MPa)")
-ax.set_title("Bending Stress vs Load")
-ax.grid(True)
-ax.legend()
+fig, ax = plt.subplots(1, 2, figsize=(10, 3))
+ax[0].plot(x, M)
+ax[0].set_title("Bending Moment Diagram")
+ax[0].set_xlabel("Wing Span (m)")
+ax[0].set_ylabel("Moment (Nm)")
+ax[0].grid(True)
+
+ax[1].plot(x, delta*1000)
+ax[1].set_title("Deflection Curve")
+ax[1].set_xlabel("Wing Span (m)")
+ax[1].set_ylabel("Deflection (mm)")
+ax[1].grid(True)
+
 st.pyplot(fig)
-
-fig2, ax2 = plt.subplots()
-s1_defl = [(f * L**3) / (3 * (E * 1e9) * (np.pi / 64) * ((od1/1000)**4 - (id1/1000)**4)) * 1000 for f in loads]
-s2_defl = [(f * L**3) / (3 * (E * 1e9) * (np.pi / 64) * ((od2/1000)**4 - (id2/1000)**4)) * 1000 for f in loads]
-ax2.plot(loads, s1_defl, label="Spar 1", color='cyan')
-ax2.plot(loads, s2_defl, label="Spar 2", color='lime')
-ax2.set_xlabel("Load (N)")
-ax2.set_ylabel("Deflection (mm)")
-ax2.set_title("Deflection vs Load")
-ax2.grid(True)
-ax2.legend()
-st.pyplot(fig2)
-
-# Optional: Data download
-df = pd.DataFrame({
-    "Load (N)": loads,
-    "Stress Spar 1 (MPa)": s1_stress,
-    "Stress Spar 2 (MPa)": s2_stress,
-    "Deflection Spar 1 (mm)": s1_defl,
-    "Deflection Spar 2 (mm)": s2_defl,
-})
-csv = df.to_csv(index=False).encode('utf-8')
-st.download_button("📥 Download CSV Data", data=csv, file_name="spar_comparison.csv", mime="text/csv")
